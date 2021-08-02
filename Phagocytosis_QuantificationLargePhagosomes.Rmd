@@ -1,0 +1,300 @@
+---
+title: "Count large phagosomes - Phagocytosis manuscript"
+output:
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+[Sophie 17-05-10]
+Analysis for experiments comparing the lysosomal staining in co- and stroma mono-cultures
+#Setup
+##Libraries
+```{r libraries10x, message=FALSE, warning=FALSE, echo=TRUE}
+library("HD2013SGI")
+library("autothresholdr")
+library("tidyverse")
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+##Data
+```{r Data_10x, echo=TRUE, eval=TRUE}
+folderWideField <- "Microscopy/CellObserver/170310HolesInStroma/"
+folderWideField2 <- "Microscopy/CellObserver/170316CellObserver_HolesInStroma+BHKPeter/"
+folderWideField3 <- "Microscopy/CellObserver/170705HolesinStroma/"
+folderWideField4 <- "Microscopy/CellObserver/170922HolesinStromaHS5DMEM/2017-09-22/"
+```
+
+# Analysis
+## Wide field images Segmentation
+###Function to segment one image and read out lysosomal intensity
+```{r Segmentation}
+fhi = matrix(1, nrow = 3, ncol = 3)
+fhi[2, 2] = -8
+
+SegmentImage <- function(n, plotSeg, PosLyso, Allimages){
+  print(n)
+  Wholeimg <- Allimages[[n]]
+  imgLyso <- Wholeimg[,,PosLyso] 
+    
+    # Perform segmentation
+    colorMode(imgLyso) = Grayscale
+    thresholdotsu <- 0.015
+    if(exp==3){thresholdotsu <- 0.005}
+    thresholded <- imgLyso
+    nmask2 <- imgLyso
+    nmask2[thresholded>thresholdotsu] <- 1
+    nmask2[thresholded<=thresholdotsu] <- 0
+    nmask2 = fillHull(nmask2)
+    nmask3 = watershed(distmap(nmask2), ext = 1)
+    nseg <- nmask3
+    nf = computeFeatures.shape(nseg)
+    nfm = computeFeatures.moment(nseg)
+    # Discard objects which are too small
+    toosmall = which(nf[,'s.area'] < 100)
+    nseg = rmObjects(nseg, toosmall)
+    toobig = which(nf[,'s.area'] > 1500)
+    nseg = rmObjects(nseg, toobig)
+    # Discard objects which are too big
+    nfm = computeFeatures.moment(nseg)
+    nf = computeFeatures.shape(nseg)
+    # Discard object which are not round
+    circularity <- 4*pi*nf[,'s.area']/(nf[,'s.perimeter']^2)
+    notround = which(circularity < 1.05)
+    notround = which(circularity < 0.8)
+    nmask4 = rmObjects(nseg, notround)
+    
+    # Read out intensities
+    Lyso <- computeFeatures.basic(nmask4, imgLyso)
+
+    #plot image with segmented cells circled
+      if(plotSeg %in% c(TRUE,"all") & n%%3==0){       
+        img_fhiCal = filter2(nmask4, fhi)
+        imglineDA <- EBImage::rgbImage(EBImage::normalize(imgLyso), EBImage::normalize(imgLyso)+img_fhiCal , EBImage::normalize(imgLyso))
+          EBImage::display(imglineDA, method = "r")
+      }
+    # Readout percentages and intensities   
+
+    return(c("Image"=n, "Total_phagosome_count"=nrow(Lyso),  "Phagosome_intensity_mean"= mean(Lyso[,"b.mean"]), "Mean_bright_pixels"=mean(nmask3*imgLyso) ))
+}
+```
+
+### Perform segmentation
+```{r ApplyFunction}
+pdf(file="Phagocytosis/LargePhagosomeSegmentation170310.pdf")
+  exp=0
+  fallWideField <- list.files(folderWideField)
+  fallWideField <- fallWideField[10]
+  Allimages <- RBioFormats::read.image(paste0(folderWideField, fallWideField))
+  PhagoNKtert <- sapply( 2:length(Allimages), function(imgnr) SegmentImage(imgnr, plotSeg =  TRUE, PosLyso= 4, Allimages=Allimages))
+  
+  rm(Allimages)
+  
+  fallWideField <- list.files(folderWideField)
+  fallWideField <- fallWideField[12]
+  Allimages <- RBioFormats::read.image(paste0(folderWideField, fallWideField))
+  PhagoHS5 <- sapply( 2:length(Allimages), function(imgnr) SegmentImage(imgnr, plotSeg =  TRUE, PosLyso= 4, Allimages=Allimages))
+dev.off()
+  
+  rm(Allimages)
+  
+pdf(file="Phagocytosis/LargePhagosomeSegmentation170316.pdf")
+  fallWideField2 <- list.files(folderWideField2)
+  fallWideField2 <- fallWideField2[6]
+  Allimages2 <- RBioFormats::read.image(paste0(folderWideField2, fallWideField2))
+  Phago170316 <- sapply( c(2:15, 34:51, 70:87, 106:123), function(imgnr) SegmentImage(imgnr, plotSeg =  TRUE, PosLyso= 4, Allimages=Allimages2))
+dev.off()
+  
+  rm(Allimages2)
+  
+pdf(file="Phagocytosis/LargePhagosomeSegmentation170705.pdf")
+  exp=3
+  fallWideField3 <- list.files(folderWideField3)
+  fallWideField3 <- fallWideField3[1]
+  Allimages3 <- RBioFormats::read.image(paste0(folderWideField3, fallWideField3))
+  Phago170705 <- sapply( c(2:18, 28:63, 73:length(Allimages3) ), function(imgnr) SegmentImage(imgnr, plotSeg =  TRUE, PosLyso= 4, Allimages=Allimages3))
+dev.off()
+
+```
+
+```{r Experiment170922,  echo=TRUE}
+pdf(file="Phagocytosis/LargePhagosomeSegmentation170922HS5.pdf")
+exp=4
+  fallWideField4 <- list.files(folderWideField4)
+  fallWideField4 <- fallWideField4[1]
+  Allimages4 <- RBioFormats::read.image(paste0(folderWideField4, fallWideField4))
+  PhagoHS5170922 <- sapply( c(2:length(Allimages4)), function(imgnr) SegmentImage(imgnr, plotSeg =  TRUE, PosLyso= 4, Allimages=Allimages4))
+dev.off()
+
+pdf(file="Phagocytosis/LargePhagosomeSegmentation170922NKTert.pdf")
+  fallWideField4 <- list.files(folderWideField4)
+  fallWideField4 <- fallWideField4[2]
+  Allimages4N <- RBioFormats::read.image(paste0(folderWideField4, fallWideField4))
+  PhagoNKTert170922 <- sapply( c(2:length(Allimages4)), function(imgnr) SegmentImage(imgnr, plotSeg =  TRUE, PosLyso= 4, Allimages=Allimages4N))
+dev.off()
+```
+
+## Formating the results and adding metadata
+### Experiment 17-09-22
+```{r formatNew}
+tmp <- unlist(lapply(PhagoHS5170922, function(x){ x["Image"] })) %>% as.vector()
+PhagoDataHS5170922 <- data_frame("Image"=tmp)
+PhagoDataHS5170922$Phagosome_intensity_mean <-  unlist(lapply(PhagoHS5170922, function(x){ x["Phagosome_intensity_mean"] })) %>% as.vector()
+PhagoDataHS5170922$Total_phagosome_count <- unlist(lapply(PhagoHS5170922, function(x){ x["Total_phagosome_count"] })) %>% as.vector()
+PhagoDataHS5170922$Mean_bright_pixels <-  unlist(lapply(PhagoHS5170922, function(x){ x["Mean_bright_pixels"] })) %>% as.vector()
+PhagoDataHS5170922$Stroma <- "HS-5"
+PhagoDataHS5170922
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% c(1:(6*3), (15*3+1):(21*3), (24*3+1):(30*3) ), "Culture"] <- "Co-culture" # co-culture
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% c((6*3+1):(9*3), (21*3+1):(24*3), (30*3+1):(33*3) ), "Culture"] <- "Mono-culture CLL" # CLL mono
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% (9*3+1):(15*3), "Culture"] <- "Mono-culture" # HS-5 mono
+PhagoDataHS5170922$Phagosome_intensity_mean[is.na(PhagoDataHS5170922$Phagosome_intensity_mean)] <- 0
+PhagoDataHS5170922$Total_phagosome_count[is.na(PhagoDataHS5170922$Total_phagosome_count)] <- 0
+PhagoDataHS5170922$Treatment <-  "venetoclax 10nM"
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% c(1:(3*3), (15*3+1):(18*3), (24*3+1):(27*3), (6*3+1):(9*3), (21*3+1):(24*3), (30*3+1):(33*3) , (9*3+1):(12*3) ), "Treatment"] <- "control"
+PhagoDataHS5170922$Experiment <- "170922"
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% c(1:(9*3)), "Experiment" ] <- "170922 Pat1"
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% c((15*3+1):(24*3)), "Experiment" ] <- "170922 Pat2"
+PhagoDataHS5170922[PhagoDataHS5170922$Image %in% c((24*3+1):(33*3)), "Experiment" ] <- "170922 Pat3"
+
+tmp <- unlist(lapply(PhagoNKTert170922, function(x){ x["Image"] })) %>% as.vector()
+PhagoDataNKTert170922 <- data_frame("Image"=tmp)
+PhagoDataNKTert170922$Phagosome_intensity_mean <-  unlist(lapply(PhagoNKTert170922, function(x){ x["Phagosome_intensity_mean"] })) %>% as.vector()
+PhagoDataNKTert170922$Total_phagosome_count <- unlist(lapply(PhagoNKTert170922, function(x){ x["Total_phagosome_count"] })) %>% as.vector()
+PhagoDataNKTert170922$Mean_bright_pixels <-  unlist(lapply(PhagoNKTert170922, function(x){ x["Mean_bright_pixels"] })) %>% as.vector()
+PhagoDataNKTert170922$Stroma <- "NKTert"
+PhagoDataNKTert170922
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% c(1:(6*3+1), (15*3+2):(21*3+1), (24*3+1+1):(30*3+1) ), "Culture"] <- "Co-culture" # co-culture
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% c((6*3+1+1):(9*3+1), (21*3+1+1):(24*3+1), (30*3+1+1):(33*3+1) ), "Culture"] <- "Mono-culture CLL" # CLL mono
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% (9*3+1+1):(15*3+1), "Culture"] <- "Mono-culture" # NKtert mono
+PhagoDataNKTert170922$Phagosome_intensity_mean[is.na(PhagoDataNKTert170922$Phagosome_intensity_mean)] <- 0
+PhagoDataNKTert170922$Total_phagosome_count[is.na(PhagoDataNKTert170922$Total_phagosome_count)] <- 0
+PhagoDataNKTert170922$Treatment <-  "venetoclax 10nM"
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% c(1:(3*3+1), (15*3+1+1):(18*3+1), (24*3+1+1):(27*3+1), (6*3+1+1):(9*3+1), (21*3+1+1):(24*3+1), (30*3+1+1):(33*3+1) , (9*3+1+1):(12*3+1) ), "Treatment"] <- "control"
+PhagoDataNKTert170922$Experiment <- "170922"
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% c(1:(9*3+1)), "Experiment" ] <- "170922 Pat1"
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% c((15*3+1+1):(24*3+1)), "Experiment" ] <- "170922 Pat2"
+PhagoDataNKTert170922[PhagoDataNKTert170922$Image %in% c((24*3+1+1):(33*3+1)), "Experiment" ] <- "170922 Pat3"
+```
+
+### older experiments
+```{r NicerData}
+tmp <- unlist(lapply(PhagoHS5, function(x){ x["Image"] })) %>% as.vector()
+PhagoDataHS5 <- data_frame("Image"=tmp)
+PhagoDataHS5$Phagosome_intensity_mean <-  unlist(lapply(PhagoHS5, function(x){ x["Phagosome_intensity_mean"] })) %>% as.vector()
+PhagoDataHS5$Total_phagosome_count <- unlist(lapply(PhagoHS5, function(x){ x["Total_phagosome_count"] })) %>% as.vector()
+PhagoDataHS5$Mean_bright_pixels <-  unlist(lapply(PhagoHS5, function(x){ x["Mean_bright_pixels"] })) %>% as.vector()
+PhagoDataHS5$Stroma <- "HS-5"
+PhagoDataHS5
+
+tmp <- unlist(lapply(PhagoNKtert, function(x){ x["Image"] })) %>% as.vector()
+PhagoDataNKtert <- data_frame("Image"=tmp)
+PhagoDataNKtert$Phagosome_intensity_mean <-  unlist(lapply(PhagoNKtert, function(x){ x["Phagosome_intensity_mean"] })) %>% as.vector()
+PhagoDataNKtert$Total_phagosome_count <- unlist(lapply(PhagoNKtert, function(x){ x["Total_phagosome_count"] })) %>% as.vector()
+PhagoDataNKtert$Mean_bright_pixels <-  unlist(lapply(PhagoNKtert, function(x){ x["Mean_bright_pixels"] })) %>% as.vector()
+PhagoDataNKtert$Stroma <- "NKTert"
+PhagoDataNKtert
+
+tmp <- unlist(lapply(Phago170316, function(x){ x["Image"] })) %>% as.vector()
+PhagoData170316 <- data_frame("Image"=tmp)
+PhagoData170316$Phagosome_intensity_mean <-  unlist(lapply(Phago170316, function(x){ x["Phagosome_intensity_mean"] })) %>% as.vector()
+PhagoData170316$Total_phagosome_count <- unlist(lapply(Phago170316, function(x){ x["Total_phagosome_count"] })) %>% as.vector()
+PhagoData170316$Mean_bright_pixels <-  unlist(lapply(Phago170316, function(x){ x["Mean_bright_pixels"] })) %>% as.vector()
+PhagoData170316$Stroma <- "HS-5"
+PhagoData170316[c(1:5, 15:23, 33:41, 51:59),"Stroma"] <- "NKTert"
+PhagoData170316
+
+#####
+tmp <- unlist(lapply(Phago170705, function(x){ x["Image"] })) %>% as.vector()
+PhagoData170705 <- data_frame("Image"=tmp)
+PhagoData170705$Phagosome_intensity_mean <-  unlist(lapply(Phago170705, function(x){ x["Phagosome_intensity_mean"] })) %>% as.vector()
+PhagoData170705$Total_phagosome_count <- unlist(lapply(Phago170705, function(x){ x["Total_phagosome_count"] })) %>% as.vector()
+PhagoData170705$Mean_bright_pixels <-  unlist(lapply(Phago170705, function(x){ x["Mean_bright_pixels"] })) %>% as.vector()
+PhagoData170705$Stroma <- "HS-5"
+PhagoData170705[c(1:8, 18:26,36:44, 54:62),"Stroma"] <- "NKTert"
+PhagoData170705
+#####
+
+
+PhagoData <- rbind(PhagoDataHS5, PhagoDataNKtert, PhagoData170316, PhagoData170705)
+
+PhagoData$Total_phagosome_count[is.na(PhagoData$Total_phagosome_count)] <- 0
+
+PhagoData$Culture <- "Mono-culture"
+PhagoData[c(1:8, 36:43, 18:26, 53:61, 71:84, 103:120, 139:155, 174:191),"Culture"] <- "Co-culture"
+PhagoData$Treatment <- "venetoclax 10nM"
+PhagoData[c(1:17, 36:52, 71:102, 139:173),"Treatment"] <- "control"
+PhagoData$Experiment <- "170310"
+PhagoData[c(71:(nrow(PhagoData)-71)),"Experiment"] <- "170316"
+PhagoData[c((nrow(PhagoData)-70):nrow(PhagoData)),"Experiment"] <- "170705"
+```
+
+```{r rbindAlsoNewExperiment}
+PhagoData <- rbind(PhagoData, PhagoDataHS5170922, PhagoDataNKTert170922)
+```
+
+### Plot Number Phagosomes
+```{r Plot, eval=TRUE}
+ggplot(PhagoData, aes(paste0(Stroma,"_",Culture,"_", Treatment), `Total_phagosome_count`, group=paste0(Treatment, Stroma, Culture), fill=Treatment)) +  theme_bw()+ theme(axis.text.x = element_text(angle = 90, hjust = 1))  + stat_boxplot(coef = 1.5) +geom_point(aes(paste0(Stroma,"_",Culture, "_", Treatment),group=paste0(Treatment, Stroma, Culture), color=Experiment )) + scale_colour_brewer(palette = "Set1")
+```
+
+### Plot Number Phagosomes nicer
+```{r Plotnicer, eval=TRUE}
+PhagoData$Sample <- paste(PhagoData$Stroma, PhagoData$Culture, PhagoData$Treatment, PhagoData$Experiment)
+MeanWells <- PhagoData %>% group_by(Sample) %>% summarise("Total_phagosome_count" =mean(Total_phagosome_count),
+                                                          "Experiment"=unique(Experiment),
+                                                          "Culture" =unique(Culture) , "Treatment" =unique(Treatment),
+                                                          "Stroma" =unique(Stroma))
+MeanWells$Culture <- as.factor(MeanWells$Culture)
+MeanWells$Culture <- factor(MeanWells$Culture, levels = levels(MeanWells$Culture)[c(2,1)])
+
+MeanWells$Stroma <- as.factor(MeanWells$Stroma)
+MeanWells$Stroma <- factor(MeanWells$Stroma, levels = levels(MeanWells$Stroma)[c(2,1)])
+
+MeanWells$Biological_replicate <- "Experiment 2"
+MeanWells$Biological_replicate[MeanWells$Experiment=="170310"] <- "Experiment 1"
+MeanWells$Biological_replicate[MeanWells$Experiment=="170705"] <- "Experiment 3"
+MeanWells$Biological_replicate[MeanWells$Experiment=="170922"] <- "Experiment 4"
+MeanWells$Biological_replicate[MeanWells$Experiment=="170922 Pat1"] <- "Experiment 4"
+MeanWells$Biological_replicate[MeanWells$Experiment=="170922 Pat2"] <- "Experiment 4"
+MeanWells$Biological_replicate[MeanWells$Experiment=="170922 Pat3"] <- "Experiment 4"
+```
+
+
+### Plot as means and lines
+```{r}
+symnum.args <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "NS"))
+
+tsra_m<-  list(
+  geom_line(aes(group= interaction(Experiment, Treatment)), 
+            color="gray70"),
+  stat_summary(fun.y = mean, geom="line", aes(group=Treatment), 
+               size=1.5, 
+               color="gray45"),
+  xlab(""), 
+  geom_point(color="gray70") ,
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+               geom = "crossbar", aes(color=Culture), width=0.7, fatten=4),
+  scale_color_manual(values = c( "#ff5656", "#5a90fc", "#b3cde3"), labels=c("Mono-culture (-CLL) ", "Co-culture (+CLL)")))
+
+Phago_Phagosome_Nr <- MeanWells %>%
+  filter(Biological_replicate %in% c("Experiment 1", "Experiment 2", "Experiment 3")) %>%
+  filter(Experiment %in% c("170310", "170316", "170705", "170922")) %>%
+  ggplot(aes(interaction( Culture, Treatment), `Total_phagosome_count`, group=interaction(Treatment, Culture, Stroma), color=Experiment)) +  
+  ylab("Nr. Phagosomes")+ 
+  facet_grid(~Stroma) + 
+  scale_x_discrete(labels = c("ctrl", "ctrl","ven", "ven")) + 
+  tsra_m
+
+Phago_Phagosome_Nr
+```
+
+
+#Session Info
+```{r SessionInfo10x, echo=TRUE}
+sessionInfo()
+```
